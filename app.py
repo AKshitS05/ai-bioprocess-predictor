@@ -1,6 +1,91 @@
+import os
 import streamlit as st
 import pandas as pd
 import joblib
+
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestRegressor
+
+
+# =========================
+# AUTO TRAIN FUNCTION
+# =========================
+
+def train_model():
+
+    df = pd.read_csv("batch-1-10.csv")
+
+    remove_columns = [
+        "batch_id",
+        "Fault reference(Fault_ref:Fault ref)",
+        "0 - Recipe driven 1 - Operator controlled(Control_ref:Control ref)"
+    ]
+
+    for col in remove_columns:
+        if col in df.columns:
+            df.drop(columns=col, inplace=True)
+
+    TARGET_COLUMN = "Penicillin concentration(P:g/L)"
+
+    df = df.dropna(subset=[TARGET_COLUMN])
+
+    X = df.drop(columns=[TARGET_COLUMN])
+    y = df[TARGET_COLUMN]
+
+    feature_columns = X.columns.tolist()
+
+    pipeline = Pipeline([
+        (
+            "imputer",
+            SimpleImputer(strategy="median")
+        ),
+
+        (
+            "scaler",
+            StandardScaler()
+        ),
+
+        (
+            "model",
+            RandomForestRegressor(
+                n_estimators=150,
+                random_state=42,
+                n_jobs=-1
+            )
+        )
+    ])
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42
+    )
+
+    pipeline.fit(X_train, y_train)
+
+    joblib.dump(pipeline, "model.pkl")
+    joblib.dump(feature_columns, "feature_columns.pkl")
+
+
+# =========================
+# TRAIN IF MODEL MISSING
+# =========================
+
+if not os.path.exists("model.pkl"):
+
+    train_model()
+
+
+# =========================
+# LOAD MODEL
+# =========================
+
+model = joblib.load("model.pkl")
+feature_columns = joblib.load("feature_columns.pkl")
 
 
 # =========================
@@ -11,14 +96,6 @@ st.set_page_config(
     page_title="AI Bioprocess Predictor",
     layout="wide"
 )
-
-
-# =========================
-# LOAD MODEL
-# =========================
-
-model = joblib.load("model.pkl")
-feature_columns = joblib.load("feature_columns.pkl")
 
 
 # =========================
@@ -33,17 +110,14 @@ st.write(
 
 
 # =========================
-# SIDEBAR INPUTS
+# SIDEBAR
 # =========================
 
-st.sidebar.header("Enter Process Parameters")
+st.sidebar.header("Input Parameters")
 
 
-# Store inputs
 input_data = {}
 
-
-# Auto-create inputs from saved features
 for feature in feature_columns:
 
     default_value = 0.0
@@ -73,21 +147,17 @@ for feature in feature_columns:
 
 
 # =========================
-# PREDICT BUTTON
+# PREDICT
 # =========================
 
 if st.button("Predict Penicillin Concentration"):
 
     try:
 
-        # Create dataframe
         input_df = pd.DataFrame([input_data])
 
-        # VERY IMPORTANT
-        # Match exact training order
         input_df = input_df[feature_columns]
 
-        # Prediction
         prediction = model.predict(input_df)[0]
 
         st.success("Prediction Successful")
